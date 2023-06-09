@@ -39,6 +39,7 @@ def xenium(
     transcripts: bool = True,
     morphology_mip: bool = True,
     morphology_focus: bool = True,
+    additional_images: Optional[bool] = None,
     imread_kwargs: Mapping[str, Any] = MappingProxyType({}),
     image_models_kwargs: Mapping[str, Any] = MappingProxyType({}),
 ) -> SpatialData:
@@ -136,11 +137,21 @@ def xenium(
     if morphology_focus:
         images["morphology_focus"] = _get_images(
             path,
-            XeniumKeys.MORPHOLOGY_MIP_FILE,
+            XeniumKeys.MORPHOLOGY_FOCUS_FILE,
             specs,
             imread_kwargs,
             image_models_kwargs,
         )
+    if additional_images is not None:
+        for img_name in additional_images:
+            images[img_name.split(".")[0]] = _get_images(
+                path,
+                XeniumKeys.MORPHOLOGY_MIP_FILE,
+                specs,
+                imread_kwargs,
+                image_models_kwargs,
+            )
+
     if cells_as_shapes:
         return SpatialData(images=images, shapes=polygons | {specs["region"]: circles}, points=points, table=table)
     return SpatialData(images=images, shapes=polygons, points=points, table=table)
