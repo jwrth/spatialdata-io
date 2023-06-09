@@ -137,7 +137,7 @@ def xenium(
     if morphology_focus:
         images["morphology_focus"] = _get_images(
             path,
-            XeniumKeys.MORPHOLOGY_MIP_FILE,
+            XeniumKeys.MORPHOLOGY_FOCUS_FILE,
             specs,
             imread_kwargs,
             image_models_kwargs,
