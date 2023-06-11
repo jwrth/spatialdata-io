@@ -27,6 +27,8 @@ from spatialdata_io._constants._constants import XeniumKeys
 from spatialdata_io._docs import inject_docs
 from spatialdata_io.readers._utils._read_10x_h5 import _read_10x_h5
 
+from dask.array import moveaxis
+
 __all__ = ["xenium"]
 
 
@@ -150,6 +152,7 @@ def xenium(
                 specs,
                 imread_kwargs,
                 image_models_kwargs,
+                rgb=True
             )
     if cells_as_shapes:
         return SpatialData(images=images, shapes=polygons | {specs["region"]: circles}, points=points, table=table)
@@ -196,7 +199,7 @@ def _get_tables_and_circles(
 ) -> AnnData | tuple[AnnData, AnnData]:
     adata = _read_10x_h5(path / XeniumKeys.CELL_FEATURE_MATRIX_FILE)
     metadata = pd.read_parquet(path / XeniumKeys.CELL_METADATA_FILE)
-    np.testing.assert_array_equal(metadata.cell_id.astype(str).values, adata.obs_names.values)
+    np.testing.assert_array_equal(metadata.cell_id.str.decode("utf-8").values, adata.obs_names.values)
     circ = metadata[[XeniumKeys.CELL_X, XeniumKeys.CELL_Y]].to_numpy()
     adata.obsm["spatial"] = circ
     metadata.drop([XeniumKeys.CELL_X, XeniumKeys.CELL_Y], axis=1, inplace=True)
@@ -223,8 +226,11 @@ def _get_images(
     specs: dict[str, Any],
     imread_kwargs: Mapping[str, Any] = MappingProxyType({}),
     image_models_kwargs: Mapping[str, Any] = MappingProxyType({}),
+    rgb: bool = False
 ) -> SpatialImage | MultiscaleSpatialImage:
     image = imread(path / file, **imread_kwargs)
+    if rgb:
+        image = moveaxis(image, -1, 1)[0]
     return Image2DModel.parse(
         image, transformations={"global": Identity()}, dims=("c", "y", "x"), **image_models_kwargs
     )
