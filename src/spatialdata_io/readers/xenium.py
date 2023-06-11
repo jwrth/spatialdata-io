@@ -146,12 +146,11 @@ def xenium(
         for img_name in additional_images:
             images[img_name.split(".")[0]] = _get_images(
                 path,
-                XeniumKeys.MORPHOLOGY_MIP_FILE,
+                img_name,
                 specs,
                 imread_kwargs,
                 image_models_kwargs,
             )
-
     if cells_as_shapes:
         return SpatialData(images=images, shapes=polygons | {specs["region"]: circles}, points=points, table=table)
     return SpatialData(images=images, shapes=polygons, points=points, table=table)

@@ -16,4 +16,4 @@ __all__ = [
     "steinbock",
 ]
 
-__version__ = version("spatialdata-io")
+#__version__ = version("spatialdata-io")
