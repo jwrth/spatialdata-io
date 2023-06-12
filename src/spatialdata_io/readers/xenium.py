@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -26,8 +26,10 @@ from spatialdata.transformations.transformations import Identity, Scale
 from spatialdata_io._constants._constants import XeniumKeys
 from spatialdata_io._docs import inject_docs
 from spatialdata_io.readers._utils._read_10x_h5 import _read_10x_h5
+import scanpy as sc
 
 from dask.array import moveaxis
+import os
 
 __all__ = ["xenium"]
 
@@ -38,10 +40,14 @@ def xenium(
     n_jobs: int = 1,
     cells_as_shapes: bool = False,
     nucleus_boundaries: bool = True,
+    cell_boundaries: bool = True,
     transcripts: bool = True,
     morphology_mip: bool = True,
     morphology_focus: bool = True,
     additional_images: Optional[bool] = None,
+    transcript_file: Optional[str] = None,
+    mtx_file: Optional[str] = None,
+    meta_file: Optional[str] = None,
     imread_kwargs: Mapping[str, Any] = MappingProxyType({}),
     image_models_kwargs: Mapping[str, Any] = MappingProxyType({}),
 ) -> SpatialData:
@@ -104,7 +110,7 @@ def xenium(
         specs = json.load(f)
 
     specs["region"] = "cell_circles" if cells_as_shapes else "cell_boundaries"
-    return_values = _get_tables_and_circles(path, cells_as_shapes, specs)
+    return_values = _get_tables_and_circles(path, cells_as_shapes, specs, mtx_file, meta_file)
     if cells_as_shapes:
         table, circles = return_values
     else:
@@ -119,13 +125,16 @@ def xenium(
             n_jobs,
         )
 
-    polygons["cell_boundaries"] = _get_polygons(
-        path, XeniumKeys.CELL_BOUNDARIES_FILE, specs, n_jobs, idx=table.obs[str(XeniumKeys.CELL_ID)].copy()
-    )
+    if cell_boundaries:
+        polygons["cell_boundaries"] = _get_polygons(
+            path, XeniumKeys.CELL_BOUNDARIES_FILE, specs, n_jobs, idx=table.obs[str(XeniumKeys.CELL_ID)].copy()
+        )
 
     points = {}
     if transcripts:
-        points["transcripts"] = _get_points(path, specs)
+        if transcript_file is None:
+            transcript_file = XeniumKeys.TRANSCRIPTS_FILE
+        points["transcripts"] = _get_points(path=path, file=transcript_file, specs=specs)
 
     images = {}
     if morphology_mip:
@@ -178,10 +187,15 @@ def _get_polygons(
     scale = Scale([1.0 / specs["pixel_size"], 1.0 / specs["pixel_size"]], axes=("x", "y"))
     return ShapesModel.parse(geo_df, transformations={"global": scale})
 
+def _decode(s):
+    try:
+        return s.decode("utf-8")
+    except (UnicodeDecodeError, AttributeError):
+        return s
 
-def _get_points(path: Path, specs: dict[str, Any]) -> Table:
-    table = read_parquet(path / XeniumKeys.TRANSCRIPTS_FILE)
-    table["feature_name"] = table["feature_name"].apply(lambda x: x.decode("utf-8"), meta=("feature_name", "object"))
+def _get_points(path: Path, file: Path, specs: dict[str, Any]) -> Table:
+    table = read_parquet(path / file)
+    table["feature_name"] = table["feature_name"].apply(lambda x: _decode(x), meta=("feature_name", "object"))
 
     transform = Scale([1.0 / specs["pixel_size"], 1.0 / specs["pixel_size"]], axes=("x", "y"))
     points = PointsModel.parse(
@@ -195,15 +209,30 @@ def _get_points(path: Path, specs: dict[str, Any]) -> Table:
 
 
 def _get_tables_and_circles(
-    path: Path, cells_as_shapes: bool, specs: dict[str, Any]
+    path: Path, cells_as_shapes: bool, specs: dict[str, Any], 
+    mtx_file: Optional[str],
+    meta_file: Optional[str],
 ) -> AnnData | tuple[AnnData, AnnData]:
-    adata = _read_10x_h5(path / XeniumKeys.CELL_FEATURE_MATRIX_FILE)
-    metadata = pd.read_parquet(path / XeniumKeys.CELL_METADATA_FILE)
-    np.testing.assert_array_equal(metadata.cell_id.str.decode("utf-8").values, adata.obs_names.values)
+    if mtx_file is None:
+        adata = _read_10x_h5(path / XeniumKeys.CELL_FEATURE_MATRIX_FILE)
+    else:
+        adata = sc.read_loom(path / mtx_file)
+    if meta_file is None:
+        metadata = pd.read_parquet(path / XeniumKeys.CELL_METADATA_FILE)
+        np.testing.assert_array_equal(metadata.cell_id.str.decode("utf-8").values, adata.obs_names.values)
+    else:
+        metadata = pd.read_csv(path / meta_file)
+        metadata = metadata.rename({
+            "cell": "cell_id",
+            "x": "x_centroid",
+            "y": "y_centroid"
+            }, axis=1)
+        np.testing.assert_array_equal(metadata.cell_id.values, adata.obs["Name"].values)
     circ = metadata[[XeniumKeys.CELL_X, XeniumKeys.CELL_Y]].to_numpy()
     adata.obsm["spatial"] = circ
     metadata.drop([XeniumKeys.CELL_X, XeniumKeys.CELL_Y], axis=1, inplace=True)
     adata.obs = metadata
+    adata.obs_names = adata.obs["cell_id"].values
     adata.obs["region"] = specs["region"]
     table = TableModel.parse(adata, region=specs["region"], region_key="region", instance_key=str(XeniumKeys.CELL_ID))
     if cells_as_shapes:
