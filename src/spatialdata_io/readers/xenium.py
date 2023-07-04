@@ -227,7 +227,6 @@ def _get_tables_and_circles(
     adata.obsm["spatial"] = circ
     metadata.drop([XeniumKeys.CELL_X, XeniumKeys.CELL_Y], axis=1, inplace=True)
     adata.obs = metadata
-    adata.obs_names = adata.obs["cell_id"].values
     adata.obs["region"] = specs["region"]
     table = TableModel.parse(adata, region=specs["region"], region_key="region", instance_key=str(XeniumKeys.CELL_ID))
     if cells_as_shapes:
