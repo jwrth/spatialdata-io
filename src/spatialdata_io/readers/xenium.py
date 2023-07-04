@@ -221,12 +221,7 @@ def _get_tables_and_circles(
         metadata = pd.read_parquet(path / XeniumKeys.CELL_METADATA_FILE)
         np.testing.assert_array_equal(metadata.cell_id.str.decode("utf-8").values, adata.obs_names.values)
     else:
-        metadata = pd.read_csv(path / meta_file)
-        metadata = metadata.rename({
-            "cell": "cell_id",
-            "x": "x_centroid",
-            "y": "y_centroid"
-            }, axis=1)
+        metadata = pd.read_parquet(path / meta_file)
         np.testing.assert_array_equal(metadata.cell_id.values, adata.obs["Name"].values)
     circ = metadata[[XeniumKeys.CELL_X, XeniumKeys.CELL_Y]].to_numpy()
     adata.obsm["spatial"] = circ
